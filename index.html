@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sleepy Eyes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* 시작 화면 (탭 유도) */
+  #startScreen {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    z-index: 10;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #startScreen svg {
+    width: 140px;
+    height: auto;
+  }
+  #startScreen p {
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    opacity: 0.6;
+    letter-spacing: 0.02em;
+  }
+  #startScreen.hide {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+
+  /* 메인 눈 화면 */
+  #eyeScreen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #zzz {
+    position: absolute;
+    top: 26%;
+    right: 24%;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: #ffffff;
+    opacity: 0;
+  }
+</style>
+</head>
+<body>
+
+  <!-- 자연스러운 시작 버튼: 여기서 자이로 권한 요청을 슬쩍 함께 처리 -->
+  <div id="startScreen">
+    <svg viewBox="0 0 180 70">
+      <path d="M20 35 Q45 10 70 35" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+      <path d="M110 35 Q135 10 160 35" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+    </svg>
+    <p>tap to start</p>
+  </div>
+
+  <div id="eyeScreen">
+    <svg id="eyes" width="200" height="80" viewBox="0 0 180 70">
+      <path id="eyeL" d="M20 35 Q45 10 70 35" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+      <path id="eyeR" d="M110 35 Q135 10 160 35" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+    </svg>
+    <div id="zzz">zzz</div>
+  </div>
+
+<script>
+(function () {
+  const eyeL = document.getElementById('eyeL');
+  const eyeR = document.getElementById('eyeR');
+  const zzz = document.getElementById('zzz');
+  const startScreen = document.getElementById('startScreen');
+
+  let state = 'sleepy'; // 'sleepy' | 'sleeping' | 'awake'
+  let blinkTimer = null;
+  let sleepyToSleepTimer = null;
+
+  function setEyeOpenness(closedRatio) {
+    // closedRatio: 0 = 완전히 뜸, 1 = 완전히 감음
+    const midY = 10 + (35 - 10) * closedRatio;
+    eyeL.setAttribute('d', `M20 35 Q45 ${midY} 70 35`);
+    eyeR.setAttribute('d', `M110 35 Q135 ${midY} 160 35`);
+  }
+
+  function showZzz(on) {
+    zzz.style.transition = 'opacity .6s, transform .6s';
+    zzz.style.opacity = on ? 1 : 0;
+    zzz.style.transform = on ? 'translateY(-10px)' : 'translateY(0)';
+  }
+
+  function blinkLoop() {
+    if (state !== 'sleepy') return;
+    showZzz(false);
+    const dur = 900;
+    const start = performance.now();
+    function frame(now) {
+      if (state !== 'sleepy') return;
+      const p = Math.min(1, (now - start) / dur);
+      const ratio = p < 0.5 ? p * 2 : (1 - p) * 2;
+      setEyeOpenness(ratio * 0.85);
+      if (p < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        blinkTimer = setTimeout(blinkLoop, 1200);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function goSleepy() {
+    clearTimeout(blinkTimer);
+    clearTimeout(sleepyToSleepTimer);
+    state = 'sleepy';
+    blinkLoop();
+    sleepyToSleepTimer = setTimeout(() => {
+      state = 'sleeping';
+      setEyeOpenness(1);
+      showZzz(true);
+    }, 3500);
+  }
+
+  function wake() {
+    clearTimeout(blinkTimer);
+    clearTimeout(sleepyToSleepTimer);
+    state = 'awake';
+    showZzz(false);
+    setEyeOpenness(0);
+  }
+
+  // ---- 자이로 센서로 잠/깸 전환 ----
+  let lastBeta = null;
+  function handleOrientation(e) {
+    const beta = e.beta; // 앞뒤 기울기 (평평히 누우면 0 근처)
+    if (beta === null || beta === undefined) return;
+    if (lastBeta !== null) {
+      const delta = Math.abs(beta - lastBeta);
+      if (delta > 15 || Math.abs(beta) > 45) {
+        if (state !== 'awake') wake();
+      } else if (Math.abs(beta) < 10 && state === 'awake') {
+        goSleepy();
+      }
+    }
+    lastBeta = beta;
+  }
+
+  function startSensor() {
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', handleOrientation);
+    }
+  }
+
+  // ---- 시작 화면 탭: 자연스럽게 자이로 권한요청을 함께 처리 ----
+  startScreen.addEventListener('click', function onStart() {
+    startScreen.removeEventListener('click', onStart);
+    startScreen.classList.add('hide');
+    goSleepy();
+
+    // iOS 13+ : 사용자 탭 이벤트 안에서만 권한 요청이 통과됨
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(function (res) {
+          if (res === 'granted') startSensor();
+        })
+        .catch(function () { /* 권한 거부 시 조용히 무시, 눈 애니메이션은 계속 동작 */ });
+    } else {
+      // Android 등 권한요청이 필요없는 브라우저
+      startSensor();
+    }
+  }, { once: true });
+})();
+</script>
+</body>
+</html>
